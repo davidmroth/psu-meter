@@ -26,7 +26,7 @@ pip install flask hidapi
 Start the app:
 
 ```bash
-python /tmp/workspace/davidmroth/psu-meter/app.py
+python app.py
 ```
 
 Then open `http://localhost:5000`.
@@ -39,7 +39,7 @@ The app polls the PSU every 5 seconds and serves:
 ## Running the shell script
 
 ```bash
-bash /tmp/workspace/davidmroth/psu-meter/psu-meter.sh
+bash psu-meter.sh
 ```
 
 If a matching `hwmon` sensor is available, it prints the current wattage in watts.
