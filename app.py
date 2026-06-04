@@ -30,6 +30,7 @@ logger.addHandler(fh)
 app = Flask(__name__)
 history = deque(maxlen=60)
 last_error = None
+last_raw = None
 
 VENDOR_ID = 0x1B1C
 PRODUCT_ID = 0x1C27
@@ -48,6 +49,11 @@ def get_power():
         time.sleep(0.15)
         data = device.read(64)
         logger.debug(f"Raw data ({len(data)} bytes): {data}")
+        # store raw response for inspection
+        try:
+            last_raw = list(data)
+        except Exception:
+            last_raw = None
 
         # Try a few parsing strategies. Some firmware revisions return the
         # measurement in different offsets / endianness. Scan the whole
@@ -96,6 +102,12 @@ def get_power():
         last_error = str(e)
         logger.exception("Error reading from HID device")
     return 0
+
+
+@app.route('/raw')
+def raw():
+    # Return last raw HID response (list of bytes) for debugging
+    return jsonify({"raw": last_raw})
 
 def update_loop():
     logger.info("Polling started")
