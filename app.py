@@ -49,16 +49,47 @@ def get_power():
         data = device.read(64)
         logger.debug(f"Raw data ({len(data)} bytes): {data}")
 
-        if len(data) > 20:
-            power = (data[17] << 8) | data[16]
-            if power == 0:
-                power = (data[19] << 8) | data[18]
-            logger.debug(f"Parsed power value: {power}")
-            if 10 < power < 2000:
-                logger.info(f"Power: {power} W")
-                device.close()
-                last_error = None
-                return power
+        # Try a few parsing strategies. Some firmware revisions return the
+        # measurement in different offsets / endianness. Scan the whole
+        # response for any 16-bit value that looks like a plausible wattage.
+        power = None
+        if len(data) >= 2:
+            # little-endian scan
+            for i in range(len(data) - 1):
+                val = (data[i+1] << 8) | data[i]
+                logger.debug(f"LE candidate @ {i}: {val}")
+                if 10 < val < 2000:
+                    power = val
+                    logger.debug(f"Selected LE candidate at {i}: {val}")
+                    break
+
+            # big-endian scan
+            if power is None:
+                for i in range(len(data) - 1):
+                    val = (data[i] << 8) | data[i+1]
+                    logger.debug(f"BE candidate @ {i}: {val}")
+                    if 10 < val < 2000:
+                        power = val
+                        logger.debug(f"Selected BE candidate at {i}: {val}")
+                        break
+
+            # signed 16-bit variants (absolute value)
+            if power is None:
+                for i in range(len(data) - 1):
+                    raw = (data[i+1] << 8) | data[i]
+                    signed = raw if raw < 0x8000 else raw - 0x10000
+                    sval = abs(signed)
+                    logger.debug(f"Signed candidate @ {i}: raw={raw} signed={signed}")
+                    if 10 < sval < 2000:
+                        power = sval
+                        logger.debug(f"Selected signed candidate at {i}: {sval}")
+                        break
+
+        if power is not None:
+            logger.info(f"Power: {power} W")
+            device.close()
+            last_error = None
+            return power
         device.close()
         last_error = None
     except Exception as e:
