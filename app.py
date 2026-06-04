@@ -101,7 +101,7 @@ def get_power_from_liquidctl():
         logger.debug("liquidctl is not installed")
         return None
 
-    devices = find_liquidctl_devices()
+    devices = list(find_liquidctl_devices())
     logger.debug(f"liquidctl discovered {len(devices)} supported device(s)")
 
     for dev in devices:
