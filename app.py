@@ -60,17 +60,7 @@ def get_power():
         # response for any 16-bit value that looks like a plausible wattage.
         power = None
         if len(data) >= 2:
-            # little-endian scan
-            for i in range(len(data) - 1):
-                val = (data[i+1] << 8) | data[i]
-                logger.debug(f"LE candidate @ {i}: {val}")
-                if 10 < val < 2000:
-                    power = val
-                    logger.debug(f"Selected LE candidate at {i}: {val}")
-                    break
-
-            # big-endian scan
-            if power is None:
+                # prefer big-endian scan first (some devices return MSB first)
                 for i in range(len(data) - 1):
                     val = (data[i] << 8) | data[i+1]
                     logger.debug(f"BE candidate @ {i}: {val}")
@@ -78,6 +68,16 @@ def get_power():
                         power = val
                         logger.debug(f"Selected BE candidate at {i}: {val}")
                         break
+
+                # fallback: little-endian scan
+                if power is None:
+                    for i in range(len(data) - 1):
+                        val = (data[i+1] << 8) | data[i]
+                        logger.debug(f"LE candidate @ {i}: {val}")
+                        if 10 < val < 2000:
+                            power = val
+                            logger.debug(f"Selected LE candidate at {i}: {val}")
+                            break
 
             # signed 16-bit variants (absolute value)
             if power is None:
