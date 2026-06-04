@@ -38,7 +38,7 @@ PRODUCT_ID = 0x1C27
 logger.info("=== Corsair PSU Power Meter Starting ===")
 
 def get_power():
-    global last_error
+    global last_error, last_raw
     try:
         logger.debug("Opening HID device")
         device = hid.device()
@@ -100,6 +100,7 @@ def get_power():
         last_error = None
     except Exception as e:
         last_error = str(e)
+        last_raw = None
         logger.exception("Error reading from HID device")
     return 0
 
