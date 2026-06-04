@@ -34,8 +34,58 @@ last_raw = None
 
 VENDOR_ID = 0x1B1C
 PRODUCT_ID = 0x1C27
+PARSE_MODE = os.getenv('PSU_PARSE_MODE', 'be-first').strip().lower()
 
 logger.info("=== Corsair PSU Power Meter Starting ===")
+logger.info(f"Parse mode: {PARSE_MODE}")
+
+
+def iter_candidates(data, byte_order):
+    for i in range(len(data) - 1):
+        if byte_order == 'be':
+            value = (data[i] << 8) | data[i + 1]
+        else:
+            value = (data[i + 1] << 8) | data[i]
+        yield i, value
+
+
+def select_power(data):
+    if len(data) < 2:
+        return None
+
+    mode_orders = {
+        'be-first': ['be', 'le'],
+        'le-first': ['le', 'be'],
+    }
+    for byte_order in mode_orders.get(PARSE_MODE, ['be', 'le']):
+        for index, value in iter_candidates(data, byte_order):
+            logger.debug(f"{byte_order.upper()} candidate @ {index}: {value}")
+            if 10 < value < 2000:
+                logger.debug(f"Selected {byte_order.upper()} candidate at {index}: {value}")
+                return value
+
+    if PARSE_MODE == 'max':
+        candidates = []
+        for byte_order in ('be', 'le'):
+            for index, value in iter_candidates(data, byte_order):
+                logger.debug(f"{byte_order.upper()} candidate @ {index}: {value}")
+                if 10 < value < 2000:
+                    candidates.append((value, byte_order, index))
+        if candidates:
+            value, byte_order, index = max(candidates, key=lambda item: item[0])
+            logger.debug(f"Selected max {byte_order.upper()} candidate at {index}: {value}")
+            return value
+
+    for i in range(len(data) - 1):
+        raw = (data[i + 1] << 8) | data[i]
+        signed = raw if raw < 0x8000 else raw - 0x10000
+        value = abs(signed)
+        logger.debug(f"Signed candidate @ {i}: raw={raw} signed={signed}")
+        if 10 < value < 2000:
+            logger.debug(f"Selected signed candidate at {i}: {value}")
+            return value
+
+    return None
 
 def get_power():
     global last_error, last_raw
@@ -55,41 +105,7 @@ def get_power():
         except Exception:
             last_raw = None
 
-        # Try a few parsing strategies. Some firmware revisions return the
-        # measurement in different offsets / endianness. Scan the whole
-        # response for any 16-bit value that looks like a plausible wattage.
-        power = None
-        if len(data) >= 2:
-            # prefer big-endian scan first (some devices return MSB first)
-            for i in range(len(data) - 1):
-                val = (data[i] << 8) | data[i+1]
-                logger.debug(f"BE candidate @ {i}: {val}")
-                if 10 < val < 2000:
-                    power = val
-                    logger.debug(f"Selected BE candidate at {i}: {val}")
-                    break
-
-            # fallback: little-endian scan
-            if power is None:
-                for i in range(len(data) - 1):
-                    val = (data[i+1] << 8) | data[i]
-                    logger.debug(f"LE candidate @ {i}: {val}")
-                    if 10 < val < 2000:
-                        power = val
-                        logger.debug(f"Selected LE candidate at {i}: {val}")
-                        break
-
-            # signed 16-bit variants (absolute value)
-            if power is None:
-                for i in range(len(data) - 1):
-                    raw = (data[i+1] << 8) | data[i]
-                    signed = raw if raw < 0x8000 else raw - 0x10000
-                    sval = abs(signed)
-                    logger.debug(f"Signed candidate @ {i}: raw={raw} signed={signed}")
-                    if 10 < sval < 2000:
-                        power = sval
-                        logger.debug(f"Selected signed candidate at {i}: {sval}")
-                        break
+        power = select_power(data)
 
         if power is not None:
             logger.info(f"Power: {power} W")
@@ -145,7 +161,14 @@ def data():
     times = [time.strftime("%H:%M:%S", time.localtime(t)) for t,p in history]
     powers = [p for t,p in history]
     current = powers[-1] if powers else 0
-    return jsonify({"current": current, "times": times, "powers": powers, "last_error": last_error})
+    return jsonify({
+        "current": current,
+        "times": times,
+        "powers": powers,
+        "last_error": last_error,
+        "last_raw": last_raw,
+        "parse_mode": PARSE_MODE,
+    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

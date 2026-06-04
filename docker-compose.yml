@@ -10,6 +10,7 @@ services:
       - .:/app
     environment:
       - LOG_LEVEL=DEBUG
+      - PSU_PARSE_MODE=be-first
     # Map USB bus so hidapi inside container can access the device. If this
     # doesn't work on your system you may need to run the container with
     # --privileged or bind specific /dev entries instead.
