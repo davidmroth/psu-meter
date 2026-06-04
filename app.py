@@ -41,6 +41,12 @@ last_source = None
 VENDOR_ID = 0x1B1C
 PRODUCT_ID = 0x1C27
 PARSE_MODE = os.getenv('PSU_PARSE_MODE', 'be-first').strip().lower()
+REPORT_LENGTH = 64
+SLAVE_ADDRESS = 0x02
+WRITE_BIT = 0x00
+READ_BIT = 0x01
+CMD_PAGE = 0x00
+CMD_READ_OUTPUT_POWER = 0xEE
 
 logger.info("=== Corsair PSU Power Meter Starting ===")
 logger.info(f"Parse mode: {PARSE_MODE}")
@@ -90,6 +96,72 @@ def select_power(data):
         if 10 < value < 2000:
             logger.debug(f"Selected signed candidate at {i}: {value}")
             return value
+
+    return None
+
+
+def linear11_to_float(data):
+    raw = int.from_bytes(bytes(data[:2]), byteorder='little')
+    exponent = raw >> 11
+    mantissa = raw & 0x7FF
+
+    if mantissa > 1023:
+        mantissa -= 2048
+    if exponent > 15:
+        exponent -= 32
+
+    return mantissa * (2 ** exponent)
+
+
+def hid_write_packet(device, data):
+    packet = [0x00] + list(data) + [0x00] * (REPORT_LENGTH - len(data))
+    device.write(packet)
+
+
+def hid_exec(device, read_bit, command, data=None):
+    payload = [SLAVE_ADDRESS | read_bit, command] + (data or [])
+    hid_write_packet(device, payload)
+    response = device.read(REPORT_LENGTH)
+    logger.debug(f"HID exec command=0x{command:02X} read_bit={read_bit} response={response}")
+    return response
+
+
+def get_power_from_hid_pmbus():
+    global last_error, last_raw, last_source
+
+    device = None
+    try:
+        device = hid.device()
+        device.open(VENDOR_ID, PRODUCT_ID)
+
+        hid_write_packet(device, [0xFE, 0x03])
+        init_response = device.read(REPORT_LENGTH)
+        logger.debug(f"HID init response: {init_response}")
+
+        page_response = hid_exec(device, WRITE_BIT, CMD_PAGE, [0])
+        logger.debug(f"HID page select response: {page_response}")
+
+        power_response = hid_exec(device, READ_BIT, CMD_READ_OUTPUT_POWER)
+        last_raw = list(power_response)
+
+        if len(power_response) >= 4 and power_response[0] == (SLAVE_ADDRESS | READ_BIT) and power_response[1] == CMD_READ_OUTPUT_POWER:
+            power = linear11_to_float(power_response[2:])
+            logger.debug(f"Decoded PMBus output power: {power}")
+            if 0 < power < 2000:
+                watts = int(round(power))
+                logger.info(f"Power: {watts} W (via hid-pmbus)")
+                last_error = None
+                last_source = "hid-pmbus"
+                return watts
+    except Exception as exc:
+        logger.exception("PMBus HID read failed")
+        last_error = str(exc)
+    finally:
+        if device is not None:
+            try:
+                device.close()
+            except Exception:
+                logger.exception("Failed to close HID device")
 
     return None
 
@@ -145,6 +217,10 @@ def get_power_from_liquidctl():
 
 def get_power():
     global last_error, last_raw, last_source
+
+    power = get_power_from_hid_pmbus()
+    if power is not None:
+        return power
 
     power = get_power_from_liquidctl()
     if power is not None:
