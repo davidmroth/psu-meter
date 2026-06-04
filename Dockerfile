@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y \
     libhidapi-libusb0 \
     curl \
     gcc \
+    make \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install flask hidapi liquidctl
