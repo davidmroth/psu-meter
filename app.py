@@ -7,6 +7,11 @@ import os
 from logging.handlers import RotatingFileHandler
 from collections import deque
 
+try:
+    from liquidctl import find_liquidctl_devices
+except ImportError:
+    find_liquidctl_devices = None
+
 # Logging configuration: console + rotating file handler
 log_dir = os.path.join(os.path.dirname(__file__), 'logs')
 os.makedirs(log_dir, exist_ok=True)
@@ -31,6 +36,7 @@ app = Flask(__name__)
 history = deque(maxlen=60)
 last_error = None
 last_raw = None
+last_source = None
 
 VENDOR_ID = 0x1B1C
 PRODUCT_ID = 0x1C27
@@ -87,8 +93,64 @@ def select_power(data):
 
     return None
 
+
+def get_power_from_liquidctl():
+    global last_error, last_source
+
+    if find_liquidctl_devices is None:
+        logger.debug("liquidctl is not installed")
+        return None
+
+    devices = find_liquidctl_devices()
+    logger.debug(f"liquidctl discovered {len(devices)} supported device(s)")
+
+    for dev in devices:
+        vendor_id = getattr(dev, 'vendor_id', None)
+        if vendor_id is None:
+            vendor_id = getattr(getattr(dev, 'device', None), 'vendor_id', None)
+
+        product_id = getattr(dev, 'product_id', None)
+        if product_id is None:
+            product_id = getattr(getattr(dev, 'device', None), 'product_id', None)
+
+        if vendor_id is not None and product_id is not None:
+            if vendor_id != VENDOR_ID or product_id != PRODUCT_ID:
+                continue
+
+        description = getattr(dev, 'description', dev.__class__.__name__)
+
+        try:
+            with dev.connect():
+                try:
+                    dev.initialize(direct_access=True)
+                except TypeError:
+                    dev.initialize()
+
+                try:
+                    status = dev.get_status(direct_access=True)
+                except TypeError:
+                    status = dev.get_status()
+
+            for prop, value, unit in status:
+                if prop == 'Total power output':
+                    watts = int(round(float(value)))
+                    logger.info(f"Power: {watts} W (via liquidctl: {description})")
+                    last_error = None
+                    last_source = f"liquidctl:{description}"
+                    return watts
+        except Exception:
+            logger.exception(f"liquidctl read failed for {description}")
+
+    return None
+
 def get_power():
-    global last_error, last_raw
+    global last_error, last_raw, last_source
+
+    power = get_power_from_liquidctl()
+    if power is not None:
+        last_raw = None
+        return power
+
     try:
         logger.debug("Opening HID device")
         device = hid.device()
@@ -108,9 +170,10 @@ def get_power():
         power = select_power(data)
 
         if power is not None:
-            logger.info(f"Power: {power} W")
+            logger.info(f"Power: {power} W (via hid fallback)")
             device.close()
             last_error = None
+            last_source = "hid-fallback"
             return power
         device.close()
         last_error = None
@@ -167,6 +230,7 @@ def data():
         "powers": powers,
         "last_error": last_error,
         "last_raw": last_raw,
+        "last_source": last_source,
         "parse_mode": PARSE_MODE,
     })
 
