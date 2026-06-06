@@ -291,8 +291,61 @@ const timeFormatter = new Intl.DateTimeFormat([], {
     minute: '2-digit',
     second: '2-digit'
 });
-let chart = new Chart(document.getElementById('chart'), {type:'line', data:{labels:[], datasets:[{label:'Power (W)', data:[]}]}});
-setInterval(()=>{fetch('/data').then(r=>r.json()).then(d=>{document.getElementById('cur').textContent=d.current; chart.data.labels=d.timestamps.map(ts => timeFormatter.format(new Date(ts * 1000))); chart.data.datasets[0].data=d.powers; chart.update();});}, 5000);
+const averageWindow = 6;
+
+function movingAverage(values, windowSize) {
+    return values.map((_, index) => {
+        const start = Math.max(0, index - windowSize + 1);
+        const window = values.slice(start, index + 1);
+        const sum = window.reduce((total, value) => total + value, 0);
+        return Math.round(sum / window.length);
+    });
+}
+
+let chart = new Chart(document.getElementById('chart'), {
+    type: 'line',
+    data: {
+        labels: [],
+        datasets: [
+            {
+                label: 'Power (W)',
+                data: [],
+                borderColor: '#3fa7ff',
+                backgroundColor: 'rgba(63, 167, 255, 0.18)',
+                pointRadius: 2,
+                borderWidth: 3,
+                tension: 0.1,
+            },
+            {
+                label: 'Average Power (W)',
+                data: [],
+                borderColor: '#ff7a59',
+                backgroundColor: 'rgba(255, 122, 89, 0.12)',
+                pointRadius: 0,
+                borderWidth: 2,
+                tension: 0.35,
+            }
+        ]
+    }
+});
+
+function refreshChart() {
+    fetch('/data')
+        .then(r => r.json())
+        .then(d => {
+            const labels = d.timestamps.map(ts => timeFormatter.format(new Date(ts * 1000)));
+            const averagePowers = movingAverage(d.powers, averageWindow);
+
+            document.getElementById('cur').textContent = d.current;
+            chart.data.labels = labels;
+            chart.data.datasets[0].data = d.powers;
+            chart.data.datasets[1].data = averagePowers;
+            chart.update();
+        });
+}
+
+refreshChart();
+setInterval(refreshChart, 5000);
 </script></body></html>
 '''
 
