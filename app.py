@@ -283,6 +283,7 @@ HTML = '''
 <!DOCTYPE html><html><head><title>PSU Power</title></head><body>
 <h1>Corsair HX1200i Power Meter</h1>
 <p>Current: <b id="cur">0</b> W</p>
+<p>Average: <b id="avg">0</b> W</p>
 <canvas id="chart" width="900" height="400"></canvas>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
@@ -291,7 +292,7 @@ const timeFormatter = new Intl.DateTimeFormat([], {
     minute: '2-digit',
     second: '2-digit'
 });
-const averageWindow = 6;
+const averageWindow = 12;
 
 function movingAverage(values, windowSize) {
     return values.map((_, index) => {
@@ -315,15 +316,18 @@ let chart = new Chart(document.getElementById('chart'), {
                 pointRadius: 2,
                 borderWidth: 3,
                 tension: 0.1,
+                order: 2,
             },
             {
                 label: 'Average Power (W)',
                 data: [],
-                borderColor: '#ff7a59',
-                backgroundColor: 'rgba(255, 122, 89, 0.12)',
+                borderColor: '#e4572e',
+                backgroundColor: 'rgba(228, 87, 46, 0.14)',
                 pointRadius: 0,
-                borderWidth: 2,
-                tension: 0.35,
+                borderWidth: 4,
+                borderDash: [10, 6],
+                tension: 0.45,
+                order: 1,
             }
         ]
     }
@@ -335,8 +339,10 @@ function refreshChart() {
         .then(d => {
             const labels = d.timestamps.map(ts => timeFormatter.format(new Date(ts * 1000)));
             const averagePowers = movingAverage(d.powers, averageWindow);
+            const currentAverage = averagePowers.length ? averagePowers[averagePowers.length - 1] : 0;
 
             document.getElementById('cur').textContent = d.current;
+            document.getElementById('avg').textContent = currentAverage;
             chart.data.labels = labels;
             chart.data.datasets[0].data = d.powers;
             chart.data.datasets[1].data = averagePowers;
