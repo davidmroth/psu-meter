@@ -286,8 +286,13 @@ HTML = '''
 <canvas id="chart" width="900" height="400"></canvas>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
+const timeFormatter = new Intl.DateTimeFormat([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+});
 let chart = new Chart(document.getElementById('chart'), {type:'line', data:{labels:[], datasets:[{label:'Power (W)', data:[]}]}});
-setInterval(()=>{fetch('/data').then(r=>r.json()).then(d=>{document.getElementById('cur').textContent=d.current; chart.data.labels=d.times; chart.data.datasets[0].data=d.powers; chart.update();});}, 5000);
+setInterval(()=>{fetch('/data').then(r=>r.json()).then(d=>{document.getElementById('cur').textContent=d.current; chart.data.labels=d.timestamps.map(ts => timeFormatter.format(new Date(ts * 1000))); chart.data.datasets[0].data=d.powers; chart.update();});}, 5000);
 </script></body></html>
 '''
 
@@ -297,12 +302,12 @@ def home():
 
 @app.route('/data')
 def data():
-    times = [time.strftime("%H:%M:%S", time.localtime(t)) for t,p in history]
+    timestamps = [t for t,p in history]
     powers = [p for t,p in history]
     current = powers[-1] if powers else 0
     return jsonify({
         "current": current,
-        "times": times,
+        "timestamps": timestamps,
         "powers": powers,
         "last_error": last_error,
         "last_raw": last_raw,
