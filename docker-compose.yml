@@ -3,14 +3,26 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      additional_contexts:
+        energy-cost: ../energy-cost
     image: psu-meter:latest
     ports:
       - "5000:5000"
     volumes:
-      - .:/app
+      - ./logs:/app/logs
+      - ./data:/data
     environment:
+      - TZ=UTC
       - LOG_LEVEL=DEBUG
       - PSU_PARSE_MODE=be-first
+      - PSU_METER_INTERVAL_SEC=5
+      - PSU_EFFICIENCY=${PSU_EFFICIENCY:-}
+      - ENERGY_DB_PATH=/data/energy.sqlite3
+      - ENERGY_RATE_PER_KWH=${ENERGY_RATE_PER_KWH:-}
+      - ENERGY_CURRENCY=${ENERGY_CURRENCY:-}
+      - RAW_RETENTION_HOURS=${RAW_RETENTION_HOURS:-}
+      - DETAIL_RETENTION_DAYS=${DETAIL_RETENTION_DAYS:-}
+      - HISTORY_RETENTION_DAYS=${HISTORY_RETENTION_DAYS:-}
     # Map USB bus so hidapi inside container can access the device. If this
     # doesn't work on your system you may need to run the container with
     # --privileged or bind specific /dev entries instead.

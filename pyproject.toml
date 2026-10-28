@@ -1,0 +1,33 @@
+[project]
+name = "psu-meter"
+version = "0.2.0"
+description = "Corsair PSU (GPU rail) power meter with a small web UI"
+requires-python = ">=3.12"
+dependencies = [
+    "flask>=3.0",
+    "energy-cost>=0.1",
+]
+
+[project.optional-dependencies]
+device = [
+    "hidapi>=0.14",
+    "liquidctl>=1.13",
+]
+test = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+psu_meter = ["templates/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
